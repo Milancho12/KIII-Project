@@ -123,19 +123,38 @@
     .empty-orders .big { font-size: 48px; margin-bottom: 12px; }
     .empty-orders .msg { font-size: 16px; font-weight: 700; }
     .empty-orders .sub { font-size: 13px; margin-top: 6px; }
+    .sunday-skip-notice {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #fff;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .sunday-skip-notice .icon { font-size: 20px; }
   </style>
 </head>
 <body>
 <div class="driver-app">
 
   <!-- Header -->
-  <div class="orders-header">
+    <div class="orders-header">
     <a href="/driver?date=<%= date %>" class="btn-back-white">←</a>
     <div class="orders-header-info">
       <div class="orders-title">📋 Нарачки за утре</div>
       <div class="orders-subtitle">Внесени на: <%= new Date(date+'T12:00:00').toLocaleDateString('mk-MK',{weekday:'long',day:'numeric',month:'long'}) %></div>
+      <div class="orders-subtitle" style="font-weight:800;margin-top:4px">📅 Испорака: <%= new Date(deliveryDate+'T12:00:00').toLocaleDateString('mk-MK',{weekday:'long',day:'numeric',month:'long'}) %></div>
     </div>
   </div>
+
+  <% if (isSundaySkipped) { %>
+  <div class="sunday-skip-notice">
+    <span class="icon">⚠️</span>
+    <span>Недела е неработна – нарачките се прикажани за <strong>понеделник <%= new Date(deliveryDate+'T12:00:00').toLocaleDateString('mk-MK',{day:'numeric',month:'long'}) %></strong></span>
+  </div>
+  <% } %>
 
   <!-- Date Selector -->
   <div class="date-selector-row">
@@ -164,7 +183,7 @@
         <tr><th>Артикл</th><th style="text-align:right">Количина</th></tr>
       </thead>
       <tbody>
-        <% items.forEach(item => { %>
+        <% let grandTotal = 0; items.forEach(item => { grandTotal += item.total_qty; %>
         <tr>
           <td>
             <span class="code-badge"><%= item.code %></span>
@@ -174,6 +193,12 @@
         </tr>
         <% }) %>
       </tbody>
+      <tfoot>
+        <tr style="background: var(--surface2); border-top: 2px solid var(--primary);">
+          <td style="font-weight: 800; font-size: 16px; padding: 14px 16px;">Вкупно сите артикли:</td>
+          <td style="font-weight: 800; font-size: 22px; color: var(--primary); padding: 14px 16px; text-align: right;"><%= grandTotal %></td>
+        </tr>
+      </tfoot>
     </table>
   </div>
 

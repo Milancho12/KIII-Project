@@ -4,6 +4,22 @@ const { db } = require('../database');
 
 function today() { return new Date().toISOString().split('T')[0]; }
 
+// Returns the next working day date string (skips Sunday → Monday)
+function nextWorkingDay(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + 1);
+  if (d.getDay() === 0) d.setDate(d.getDate() + 1); // skip Sunday
+  return d.toISOString().split('T')[0];
+}
+
+// Returns the previous working day date string (skips Sunday ← Saturday)
+function prevWorkingDay(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() - 1);
+  if (d.getDay() === 0) d.setDate(d.getDate() - 1); // skip Sunday
+  return d.toISOString().split('T')[0];
+}
+
 // Driver home — supports ?date= query param
 router.get('/', async (req, res) => {
   try {
@@ -53,6 +69,10 @@ router.get('/tomorrow-orders', async (req, res) => {
     const driverId = req.session.user.id;
     const date = req.query.date || today();
 
+    // Calculate the delivery date (next working day — skip Sunday)
+    const deliveryDate = nextWorkingDay(date);
+    const isSundaySkipped = new Date(date + 'T12:00:00').getDay() === 6; // Saturday → skip Sunday
+
     // Aggregate next_day_qty across all markets for this driver on chosen date
     const items = await db.allAsync(`
       SELECT a.code, a.name, a.sort_order,
@@ -74,7 +94,7 @@ router.get('/tomorrow-orders', async (req, res) => {
       WHERE d.driver_id=? AND d.date=? AND di.next_day_qty > 0
       ORDER BY m.name, a.sort_order`, [driverId, date]);
 
-    res.render('driver/tomorrow-orders', { date, items, byMarket });
+    res.render('driver/tomorrow-orders', { date, deliveryDate, isSundaySkipped, items, byMarket });
   } catch(e) { res.status(500).send(e.message); }
 });
 
@@ -98,13 +118,12 @@ router.get('/market/:marketId', async (req, res) => {
       rows.forEach(r => { itemsMap[r.article_id] = r; });
     }
 
-    // Pre-fill delivered from previous day's next_day_qty (only when opening today with no delivery yet)
+    // Pre-fill delivered from previous working day's next_day_qty (only when opening today with no delivery yet)
+    // If today is Monday, look back to Saturday (skip Sunday which is non-working)
     const nextDayMap = {};
     if (!delivery && isToday) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yDate = yesterday.toISOString().split('T')[0];
-      const yDelivery = await db.getAsync('SELECT * FROM deliveries WHERE driver_id=? AND market_id=? AND date=?', [driverId, marketId, yDate]);
+      const prevDate = prevWorkingDay(date);
+      const yDelivery = await db.getAsync('SELECT * FROM deliveries WHERE driver_id=? AND market_id=? AND date=?', [driverId, marketId, prevDate]);
       if (yDelivery) {
         const yItems = await db.allAsync('SELECT * FROM delivery_items WHERE delivery_id=?', [yDelivery.id]);
         yItems.forEach(r => { if (r.next_day_qty > 0) nextDayMap[r.article_id] = r.next_day_qty; });
@@ -165,12 +184,11 @@ router.get('/loading-list', async (req, res) => {
       rows.forEach(r => { itemsMap[r.article_id] = r; });
     }
 
-    // Pre-fill from previous day aggregate next_day_qty if no list yet
+    // Pre-fill from previous working day aggregate next_day_qty if no list yet
+    // If today is Monday, use Saturday (skip Sunday which is non-working)
     const nextDayMap = {};
     if (!loadingList) {
-      const prev = new Date(date + 'T12:00:00');
-      prev.setDate(prev.getDate() - 1);
-      const prevDate = prev.toISOString().split('T')[0];
+      const prevDate = prevWorkingDay(date);
       const nd = await db.allAsync(`
         SELECT di.article_id, SUM(di.next_day_qty) total_qty
         FROM delivery_items di JOIN deliveries d ON d.id=di.delivery_id
