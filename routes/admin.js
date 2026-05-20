@@ -414,12 +414,11 @@ router.get('/return-by-client', async (req, res) => {
       JOIN deliveries d ON d.id = di.delivery_id
       JOIN markets m    ON m.id = d.market_id
       JOIN articles a   ON a.id = di.article_id
-      WHERE d.date>=? AND d.date<=?
-        AND di.returned_qty > 0`;
+      WHERE d.date>=? AND d.date<=?`;
     const params = [f.date_from, f.date_to];
     if (f.market_id)    { sql += ' AND d.market_id=?';  params.push(f.market_id); }
     if (f.article_code) { sql += ' AND a.code=?';       params.push(f.article_code); }
-    sql += ' GROUP BY m.id, a.id ORDER BY m.name, a.sort_order';
+    sql += ' GROUP BY m.id, a.id HAVING tot_ret > 0 ORDER BY m.name, a.sort_order';
     rows = await db.allAsync(sql, params);
     res.render('admin/return-by-client', { rows, markets, articles, filters: f });
   } catch (e) { res.status(500).send(e.message); }
