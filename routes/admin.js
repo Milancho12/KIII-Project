@@ -286,11 +286,11 @@ router.get('/zito-report/excel', async (req, res) => {
 
     // Color palette matching the image exactly
     const C = {
-      orange:     'FFFFC000', // Sifra-distributer & Datum  (deep amber/orange)
-      clientBg:   'FFFF8C00', // Podatoci za klientot       (dark orange)
-      prodBg:     'FFFF6600', // Podatoci za Proizvod       (brick orange)
-      greenBg:    'FF00B050', // Kolicini                   (Excel green)
-      yellowBg:   'FFFFFF00', // Vrednost(Bez DDV)          (bright yellow)
+      orange: 'FFFFC000', // Sifra-distributer & Datum  (deep amber/orange)
+      clientBg: 'FFFF8C00', // Podatoci za klientot       (dark orange)
+      prodBg: 'FFFF6600', // Podatoci za Proizvod       (brick orange)
+      greenBg: 'FF00B050', // Kolicini                   (Excel green)
+      yellowBg: 'FFFFFF00', // Vrednost(Bez DDV)          (bright yellow)
     };
 
     const hStyle = (argbBg, argbFg = 'FF000000') => ({
@@ -298,10 +298,10 @@ router.get('/zito-report/excel', async (req, res) => {
       fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: argbBg } },
       alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
       border: {
-        top:    { style: 'medium', color: { argb: 'FF000000' } },
-        left:   { style: 'medium', color: { argb: 'FF000000' } },
+        top: { style: 'medium', color: { argb: 'FF000000' } },
+        left: { style: 'medium', color: { argb: 'FF000000' } },
         bottom: { style: 'medium', color: { argb: 'FF000000' } },
-        right:  { style: 'medium', color: { argb: 'FF000000' } },
+        right: { style: 'medium', color: { argb: 'FF000000' } },
       }
     });
 
@@ -322,12 +322,12 @@ router.get('/zito-report/excel', async (req, res) => {
     // ── ROW 2: Column names ───────────────────────────────
     const row2 = ws.getRow(2);
     row2.height = 34;
-    const cols   = ['DISTRIBUTER','DATUM','KLIENT SIFRA','KLIENT OPIS','OBJEKT SIFRA','OBJEKT GRAD','OBJEKT ADRESA',
-                    'PROIZVOD SIFRA','PROIZVOD OPIS','BRUTO KOL','VRATENO KOL','NETO KOL','BRUTO IZNOS','VRATENO IZNOS','NETO IZNOS'];
-    const colBgs = [C.orange,C.orange,C.clientBg,C.clientBg,C.clientBg,C.clientBg,C.clientBg,
-                    C.prodBg,C.prodBg,C.greenBg,C.greenBg,C.greenBg,C.yellowBg,C.yellowBg,C.yellowBg];
-    const colFgs = ['FF000000','FF000000','FF000000','FF000000','FF000000','FF000000','FF000000',
-                    'FFFFFFFF','FFFFFFFF','FFFFFFFF','FFFFFFFF','FFFFFFFF','FF000000','FF000000','FF000000'];
+    const cols = ['DISTRIBUTER', 'DATUM', 'KLIENT SIFRA', 'KLIENT OPIS', 'OBJEKT SIFRA', 'OBJEKT GRAD', 'OBJEKT ADRESA',
+      'PROIZVOD SIFRA', 'PROIZVOD OPIS', 'BRUTO KOL', 'VRATENO KOL', 'NETO KOL', 'BRUTO IZNOS', 'VRATENO IZNOS', 'NETO IZNOS'];
+    const colBgs = [C.orange, C.orange, C.clientBg, C.clientBg, C.clientBg, C.clientBg, C.clientBg,
+    C.prodBg, C.prodBg, C.greenBg, C.greenBg, C.greenBg, C.yellowBg, C.yellowBg, C.yellowBg];
+    const colFgs = ['FF000000', 'FF000000', 'FF000000', 'FF000000', 'FF000000', 'FF000000', 'FF000000',
+      'FFFFFFFF', 'FFFFFFFF', 'FFFFFFFF', 'FFFFFFFF', 'FFFFFFFF', 'FF000000', 'FF000000', 'FF000000'];
     cols.forEach((name, i) => {
       const cell = row2.getCell(i + 1);
       cell.value = name;
@@ -337,7 +337,7 @@ router.get('/zito-report/excel', async (req, res) => {
     // ── DATA ROWS ─────────────────────────────────────────
     const dataStyle = {
       font: { size: 10 },
-      border: { top:{style:'thin'}, left:{style:'thin'}, bottom:{style:'thin'}, right:{style:'thin'} },
+      border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } },
       alignment: { vertical: 'middle' }
     };
     const numStyle = { ...dataStyle, alignment: { horizontal: 'right', vertical: 'middle' } };
@@ -398,11 +398,11 @@ router.get('/return-by-client', async (req, res) => {
     const t = today();
     const f = {
       date_from: req.query.date_from || t,
-      date_to:   req.query.date_to   || t,
+      date_to: req.query.date_to || t,
       market_id: req.query.market_id || '',
       article_code: req.query.article_code || ''
     };
-    const markets  = await db.allAsync('SELECT id,name FROM markets WHERE active=1 ORDER BY name');
+    const markets = await db.allAsync('SELECT id,name FROM markets WHERE active=1 ORDER BY name');
     const articles = await db.allAsync('SELECT id,code,name FROM articles WHERE active=1 ORDER BY sort_order');
     let rows = [];
     let sql = `
@@ -416,8 +416,8 @@ router.get('/return-by-client', async (req, res) => {
       JOIN articles a   ON a.id = di.article_id
       WHERE d.date>=? AND d.date<=?`;
     const params = [f.date_from, f.date_to];
-    if (f.market_id)    { sql += ' AND d.market_id=?';  params.push(f.market_id); }
-    if (f.article_code) { sql += ' AND a.code=?';       params.push(f.article_code); }
+    if (f.market_id) { sql += ' AND d.market_id=?'; params.push(f.market_id); }
+    if (f.article_code) { sql += ' AND a.code=?'; params.push(f.article_code); }
     sql += ' GROUP BY m.id, a.id HAVING tot_ret > 0 ORDER BY m.name, a.sort_order';
     rows = await db.allAsync(sql, params);
     res.render('admin/return-by-client', { rows, markets, articles, filters: f });
@@ -430,13 +430,13 @@ router.get('/return-by-group', async (req, res) => {
     const t = today();
     const f = {
       date_from: req.query.date_from || t,
-      date_to:   req.query.date_to   || t
+      date_to: req.query.date_to || t
     };
     // All groups with their code lists
     const GROUPS = [
-      { key: 'sekojedneven', label: 'Секојдневен леб',   codes: ['89','94','868','430','725'] },
-      { key: 'specijalen',   label: 'Специјален леб',    codes: ['737','738','770','644','643','870','806'] },
-      { key: 'tost',         label: 'Тост леб',          codes: ['89','90','641','642','669','417','418','948','949','723','778'] },
+      { key: 'sekojedneven', label: 'Секојдневен леб', codes: ['814', '94', '868', '430', '725'] },
+      { key: 'specijalen', label: 'Специјален леб', codes: ['737', '738', '770', '644', '643', '870', '806'] },
+      { key: 'tost', label: 'Тост леб', codes: ['89', '90', '641', '642', '669', '417', '418', '948', '949', '723', '778'] },
     ];
 
     const result = [];
@@ -463,9 +463,9 @@ router.get('/return-by-group', async (req, res) => {
 
 // ── BREAD CATEGORY SALES REPORTS ─────────────────────────
 const BREAD_GROUPS = {
-  sekojedneven: { label: 'Секојдневен леб',  codes: ['89','94','868','430','725'] },
-  specijalen:   { label: 'Специјален леб',   codes: ['737','738','770','644','643','870','806'] },
-  tost:         { label: 'Тост леб',         codes: ['89','90','641','642','669','417','418','948','949','723','778'] },
+  sekojedneven: { label: 'Секојдневен леб', codes: ['89', '94', '868', '430', '725', '814'] },
+  specijalen: { label: 'Специјален леб', codes: ['737', '738', '770', '644', '643', '870', '806'] },
+  tost: { label: 'Тост леб', codes: ['89', '90', '641', '642', '669', '417', '418', '948', '949', '723', '778'] },
 };
 
 router.get('/bread-report/:group', async (req, res) => {
@@ -475,7 +475,7 @@ router.get('/bread-report/:group', async (req, res) => {
     const t = today();
     const f = {
       date_from: req.query.date_from || t,
-      date_to:   req.query.date_to   || t,
+      date_to: req.query.date_to || t,
       market_id: req.query.market_id || ''
     };
     const markets = await db.allAsync('SELECT id,name FROM markets WHERE active=1 ORDER BY name');
