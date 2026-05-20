@@ -392,6 +392,116 @@ router.get('/zito-report/excel', async (req, res) => {
 });
 
 
+// ── RETURN BY CLIENT REPORT ──────────────────────────────
+router.get('/return-by-client', async (req, res) => {
+  try {
+    const t = today();
+    const f = {
+      date_from: req.query.date_from || t,
+      date_to:   req.query.date_to   || t,
+      market_id: req.query.market_id || '',
+      article_code: req.query.article_code || ''
+    };
+    const markets  = await db.allAsync('SELECT id,name FROM markets WHERE active=1 ORDER BY name');
+    const articles = await db.allAsync('SELECT id,code,name FROM articles WHERE active=1 ORDER BY sort_order');
+    let rows = [];
+    let sql = `
+      SELECT m.name market_name, m.client_code, a.code art_code, a.name art_name,
+             SUM(di.delivered_qty) tot_del,
+             SUM(di.returned_qty)  tot_ret,
+             SUM(di.delivered_qty - di.returned_qty) net_qty
+      FROM delivery_items di
+      JOIN deliveries d ON d.id = di.delivery_id
+      JOIN markets m    ON m.id = d.market_id
+      JOIN articles a   ON a.id = di.article_id
+      WHERE d.date>=? AND d.date<=?
+        AND di.returned_qty > 0`;
+    const params = [f.date_from, f.date_to];
+    if (f.market_id)    { sql += ' AND d.market_id=?';  params.push(f.market_id); }
+    if (f.article_code) { sql += ' AND a.code=?';       params.push(f.article_code); }
+    sql += ' GROUP BY m.id, a.id ORDER BY m.name, a.sort_order';
+    rows = await db.allAsync(sql, params);
+    res.render('admin/return-by-client', { rows, markets, articles, filters: f });
+  } catch (e) { res.status(500).send(e.message); }
+});
+
+// ── RETURN BY PRODUCT GROUP REPORT ───────────────────────
+router.get('/return-by-group', async (req, res) => {
+  try {
+    const t = today();
+    const f = {
+      date_from: req.query.date_from || t,
+      date_to:   req.query.date_to   || t
+    };
+    // All groups with their code lists
+    const GROUPS = [
+      { key: 'sekojedneven', label: 'Секојдневен леб',   codes: ['89','94','868','430','725'] },
+      { key: 'specijalen',   label: 'Специјален леб',    codes: ['737','738','770','644','643','870','806'] },
+      { key: 'tost',         label: 'Тост леб',          codes: ['89','90','641','642','669','417','418','948','949','723','778'] },
+    ];
+
+    const result = [];
+    for (const g of GROUPS) {
+      const placeholders = g.codes.map(() => '?').join(',');
+      const sql = `
+        SELECT a.code art_code, a.name art_name,
+               SUM(di.delivered_qty) tot_del,
+               SUM(di.returned_qty)  tot_ret,
+               SUM(di.delivered_qty - di.returned_qty) net_qty
+        FROM delivery_items di
+        JOIN deliveries d ON d.id = di.delivery_id
+        JOIN articles a   ON a.id = di.article_id
+        WHERE d.date>=? AND d.date<=?
+          AND a.code IN (${placeholders})
+        GROUP BY a.id
+        ORDER BY a.sort_order`;
+      const rows = await db.allAsync(sql, [f.date_from, f.date_to, ...g.codes]);
+      result.push({ ...g, rows });
+    }
+    res.render('admin/return-by-group', { result, filters: f });
+  } catch (e) { res.status(500).send(e.message); }
+});
+
+// ── BREAD CATEGORY SALES REPORTS ─────────────────────────
+const BREAD_GROUPS = {
+  sekojedneven: { label: 'Секојдневен леб',  codes: ['89','94','868','430','725'] },
+  specijalen:   { label: 'Специјален леб',   codes: ['737','738','770','644','643','870','806'] },
+  tost:         { label: 'Тост леб',         codes: ['89','90','641','642','669','417','418','948','949','723','778'] },
+};
+
+router.get('/bread-report/:group', async (req, res) => {
+  try {
+    const group = BREAD_GROUPS[req.params.group];
+    if (!group) return res.status(404).send('Непозната група');
+    const t = today();
+    const f = {
+      date_from: req.query.date_from || t,
+      date_to:   req.query.date_to   || t,
+      market_id: req.query.market_id || ''
+    };
+    const markets = await db.allAsync('SELECT id,name FROM markets WHERE active=1 ORDER BY name');
+    const placeholders = group.codes.map(() => '?').join(',');
+    let sql = `
+      SELECT m.name market_name, a.code art_code, a.name art_name,
+             SUM(di.delivered_qty) tot_del,
+             SUM(di.returned_qty)  tot_ret,
+             SUM(di.delivered_qty - di.returned_qty) net_qty,
+             a.price,
+             SUM(di.delivered_qty - di.returned_qty) * a.price net_amount
+      FROM delivery_items di
+      JOIN deliveries d ON d.id = di.delivery_id
+      JOIN markets m    ON m.id = d.market_id
+      JOIN articles a   ON a.id = di.article_id
+      WHERE d.date>=? AND d.date<=?
+        AND a.code IN (${placeholders})`;
+    const params = [f.date_from, f.date_to, ...group.codes];
+    if (f.market_id) { sql += ' AND d.market_id=?'; params.push(f.market_id); }
+    sql += ' GROUP BY m.id, a.id HAVING net_qty > 0 ORDER BY m.name, a.sort_order';
+    const rows = await db.allAsync(sql, params);
+    res.render('admin/bread-report', { rows, markets, filters: f, group, groupKey: req.params.group });
+  } catch (e) { res.status(500).send(e.message); }
+});
+
 // ── API: MARKETS ──────────────────────────────────────────
 
 router.post('/api/markets', async (req, res) => {
