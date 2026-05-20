@@ -33,10 +33,19 @@
         if (!byMarket[r.market_name]) byMarket[r.market_name] = [];
         byMarket[r.market_name].push(r);
       });
+
+      const marketGroups = Object.entries(byMarket).map(([market, items]) => {
+        return {
+          market,
+          items,
+          mTotal: items.reduce((s, r) => s + r.tot_ret, 0)
+        };
+      });
+
+      marketGroups.sort((a, b) => b.mTotal - a.mTotal);
     %>
     <% let grandTotal = 0; %>
-    <% Object.entries(byMarket).forEach(([market, items]) => {
-         const mTotal = items.reduce((s, r) => s + r.tot_ret, 0);
+    <% marketGroups.forEach(({ market, items, mTotal }) => {
          grandTotal += mTotal;
     %>
     <h3 style="margin:18px 0 6px;font-size:14px;color:var(--primary);border-bottom:1px solid var(--border);padding-bottom:4px">
