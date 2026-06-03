@@ -146,13 +146,18 @@ router.get('/reports/word', async (req, res) => {
         HAVING net_qty > 0
         ORDER BY a.sort_order`, [market.id, date_from, date_to]);
 
+      // Build heading: show client_code next to name if available
+      const marketHeading = market.client_code
+        ? `${market.client_code} – ${market.name}`
+        : market.name;
+
       if (rows.length === 0) continue;
 
       const totalPrice = rows.reduce((sum, r) => sum + (r.net_qty * r.price), 0);
 
-      // Market name heading (bold, larger)
+      // Market name heading (bold, larger) – includes client code if available
       children.push(new Paragraph({
-        children: [new TextRun({ text: market.name, bold: true, size: 36, color: '1a1a2e' })],
+        children: [new TextRun({ text: marketHeading, bold: true, size: 36, color: '1a1a2e' })],
         spacing: { before: 480, after: 240 },
       }));
 
