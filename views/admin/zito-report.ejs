@@ -11,6 +11,15 @@
       <input type="date" name="date_to" value="<%= filters.date_to %>">
     </div>
     <div class="field">
+      <label>🏢 Фирма (опционално)</label>
+      <select name="company_id" id="filter-company" onchange="filterMarkets()">
+        <option value="">— Сите фирми —</option>
+        <% companies.forEach(c => { %>
+        <option value="<%= c.id %>" <%= filters.company_id==c.id?'selected':'' %>><%= c.name %></option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="field">
       <label>🚗 Возач (опционално)</label>
       <select name="driver_id">
         <option value="">— Сите возачи —</option>
@@ -21,10 +30,10 @@
     </div>
     <div class="field">
       <label>🏪 Маркет (опционално)</label>
-      <select name="market_id">
+      <select name="market_id" id="filter-market">
         <option value="">— Сите маркети —</option>
         <% markets.forEach(m => { %>
-        <option value="<%= m.id %>" <%= filters.market_id==m.id?'selected':'' %>><%= m.name %></option>
+        <option value="<%= m.id %>" data-company="<%= m.company_id||'' %>" <%= filters.market_id==m.id?'selected':'' %>><%= m.name %></option>
         <% }) %>
       </select>
     </div>
@@ -41,8 +50,10 @@
       <span style="font-size:13px;color:var(--text3)">
         <%= filters.date_from %> → <%= filters.date_to %>
         <% if (filters.driver_id) { %> · Возач филтер активен<% } %>
+        <% if (filters.company_id) { %> · Фирма филтер активен<% } %>
       </span>
-      <a href="/admin/zito-report/excel?date_from=<%= filters.date_from %>&date_to=<%= filters.date_to %>&driver_id=<%= filters.driver_id %>&market_id=<%= filters.market_id %>"
+      <a id="excel-link"
+         href="/admin/zito-report/excel?date_from=<%= filters.date_from %>&date_to=<%= filters.date_to %>&driver_id=<%= filters.driver_id %>&market_id=<%= filters.market_id %>&company_id=<%= filters.company_id %>"
          class="btn btn-success">
         ⬇️ Преземи Excel (.xlsx)
       </a>
@@ -60,10 +71,39 @@
         <div style="font-size:12px;color:var(--success);font-weight:700;margin-bottom:6px">✅ Напомена</div>
         <div style="font-size:13px;color:var(--text2);line-height:1.7">
           Полето <strong>Град</strong> (OBJEKT GRAD) се внесува при додавање или уредување на маркет во делот <strong>Пазари</strong>.
+          Изберете <strong>Фирма</strong> за да го ограничите извештајот само на нејзините пазари.
         </div>
       </div>
     </div>
   </div>
 </div>
+
+<script>
+(function() {
+  const companyVal = '<%= filters.company_id %>';
+  if (companyVal) filterMarkets();
+})();
+
+function filterMarkets() {
+  const companyId = document.getElementById('filter-company').value;
+  const marketSel = document.getElementById('filter-market');
+  Array.from(marketSel.options).forEach(opt => {
+    if (!opt.value) { opt.style.display = ''; return; }
+    const belongs = !companyId || opt.dataset.company == companyId;
+    opt.style.display = belongs ? '' : 'none';
+  });
+  const selectedOpt = marketSel.options[marketSel.selectedIndex];
+  if (selectedOpt && selectedOpt.style.display === 'none') {
+    marketSel.value = '';
+  }
+  // Update excel link company_id
+  const link = document.getElementById('excel-link');
+  if (link) {
+    const url = new URL(link.href, window.location.origin);
+    url.searchParams.set('company_id', companyId);
+    link.href = url.toString();
+  }
+}
+</script>
 
 <%- include('_footer') %>

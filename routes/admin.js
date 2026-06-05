@@ -70,8 +70,9 @@ router.post('/settings', async (req, res) => {
 });
 
 router.get('/markets', async (req, res) => {
-  const markets = await db.allAsync('SELECT * FROM markets WHERE active=1 ORDER BY name');
-  res.render('admin/markets', { markets });
+  const markets = await db.allAsync('SELECT m.*, c.name company_name FROM markets m LEFT JOIN companies c ON c.id=m.company_id WHERE m.active=1 ORDER BY m.name');
+  const companies = await db.allAsync('SELECT id,name FROM companies WHERE active=1 ORDER BY name');
+  res.render('admin/markets', { markets, companies });
 });
 
 router.get('/articles', async (req, res) => {
@@ -99,9 +100,10 @@ router.get('/orders', async (req, res) => {
 
 router.get('/reports', async (req, res) => {
   const t = today();
-  const f = { date_from: req.query.date_from || t, date_to: req.query.date_to || t, driver_id: req.query.driver_id || '', market_id: req.query.market_id || '' };
+  const f = { date_from: req.query.date_from || t, date_to: req.query.date_to || t, driver_id: req.query.driver_id || '', market_id: req.query.market_id || '', company_id: req.query.company_id || '' };
   const drivers = await db.allAsync("SELECT id,name FROM users WHERE role='driver' ORDER BY name");
-  const markets = await db.allAsync('SELECT id,name FROM markets ORDER BY name');
+  const markets = await db.allAsync('SELECT id, name, company_id FROM markets ORDER BY name');
+  const companies = await db.allAsync('SELECT id,name FROM companies WHERE active=1 ORDER BY name');
   let q = `SELECT d.id, d.date, d.submitted_at, d.edited_at, d.notes, u.name driver_name, m.name market_name,
            COALESCE(SUM(di.delivered_qty),0) tot_del, COALESCE(SUM(di.returned_qty),0) tot_ret
     FROM deliveries d JOIN users u ON u.id=d.driver_id JOIN markets m ON m.id=d.market_id
@@ -111,21 +113,24 @@ router.get('/reports', async (req, res) => {
   if (f.date_to) { q += ' AND d.date<=?'; params.push(f.date_to); }
   if (f.driver_id) { q += ' AND d.driver_id=?'; params.push(f.driver_id); }
   if (f.market_id) { q += ' AND d.market_id=?'; params.push(f.market_id); }
+  if (f.company_id) { q += ' AND m.company_id=?'; params.push(f.company_id); }
   q += ' GROUP BY d.id ORDER BY d.date DESC, d.submitted_at DESC LIMIT 500';
   const deliveries = await db.allAsync(q, params);
-  res.render('admin/reports', { deliveries, drivers, markets, filters: f });
+  res.render('admin/reports', { deliveries, drivers, markets, companies, filters: f });
 });
 
 // ── WORD DOCUMENT EXPORT ──────────────────────────────────
 
 router.get('/reports/word', async (req, res) => {
   try {
-    const { date_from, date_to, market_id } = req.query;
+    const { date_from, date_to, market_id, company_id } = req.query;
     if (!date_from || !date_to) return res.status(400).send('Датумите се задолжителни');
 
     let marketsToExport;
     if (market_id) {
       marketsToExport = await db.allAsync('SELECT * FROM markets WHERE id=?', [market_id]);
+    } else if (company_id) {
+      marketsToExport = await db.allAsync('SELECT * FROM markets WHERE active=1 AND company_id=? ORDER BY name', [company_id]);
     } else {
       marketsToExport = await db.allAsync('SELECT * FROM markets WHERE active=1 ORDER BY name');
     }
@@ -232,15 +237,16 @@ router.get('/zito-report', async (req, res) => {
   try {
     const t = today();
     const drivers = await db.allAsync("SELECT id,name FROM users WHERE role='driver' ORDER BY name");
-    const markets = await db.allAsync('SELECT id,name FROM markets WHERE active=1 ORDER BY name');
-    const f = { date_from: req.query.date_from || t, date_to: req.query.date_to || t, driver_id: req.query.driver_id || '', market_id: req.query.market_id || '' };
-    res.render('admin/zito-report', { drivers, markets, filters: f });
+    const markets = await db.allAsync('SELECT id, name, company_id FROM markets WHERE active=1 ORDER BY name');
+    const companies = await db.allAsync('SELECT id,name FROM companies WHERE active=1 ORDER BY name');
+    const f = { date_from: req.query.date_from || t, date_to: req.query.date_to || t, driver_id: req.query.driver_id || '', market_id: req.query.market_id || '', company_id: req.query.company_id || '' };
+    res.render('admin/zito-report', { drivers, markets, companies, filters: f });
   } catch (e) { res.status(500).send(e.message); }
 });
 
 router.get('/zito-report/excel', async (req, res) => {
   try {
-    const { date_from, date_to, driver_id, market_id } = req.query;
+    const { date_from, date_to, driver_id, market_id, company_id } = req.query;
     if (!date_from || !date_to) return res.status(400).send('Датумите се задолжителни');
 
     let sql = `
@@ -258,6 +264,7 @@ router.get('/zito-report/excel', async (req, res) => {
     const params = [date_from, date_to];
     if (driver_id) { sql += ' AND d.driver_id=?'; params.push(driver_id); }
     if (market_id) { sql += ' AND d.market_id=?'; params.push(market_id); }
+    if (company_id) { sql += ' AND m.company_id=?'; params.push(company_id); }
     sql += ' GROUP BY m.id, a.id HAVING net_qty > 0 ORDER BY m.name, a.sort_order';
 
     const rows = await db.allAsync(sql, params);
@@ -405,9 +412,11 @@ router.get('/return-by-client', async (req, res) => {
       date_from: req.query.date_from || t,
       date_to: req.query.date_to || t,
       market_id: req.query.market_id || '',
-      article_code: req.query.article_code || ''
+      article_code: req.query.article_code || '',
+      company_id: req.query.company_id || ''
     };
-    const markets = await db.allAsync('SELECT id,name FROM markets WHERE active=1 ORDER BY name');
+    const markets = await db.allAsync('SELECT id, name, company_id FROM markets WHERE active=1 ORDER BY name');
+    const companies = await db.allAsync('SELECT id, name FROM companies WHERE active=1 ORDER BY name');
     const articles = await db.allAsync('SELECT id,code,name FROM articles WHERE active=1 ORDER BY sort_order');
     let rows = [];
     let sql = `
@@ -421,11 +430,12 @@ router.get('/return-by-client', async (req, res) => {
       JOIN articles a   ON a.id = di.article_id
       WHERE d.date>=? AND d.date<=?`;
     const params = [f.date_from, f.date_to];
+    if (f.company_id) { sql += ' AND m.company_id=?'; params.push(f.company_id); }
     if (f.market_id) { sql += ' AND d.market_id=?'; params.push(f.market_id); }
     if (f.article_code) { sql += ' AND a.code=?'; params.push(f.article_code); }
     sql += ' GROUP BY m.id, a.id HAVING tot_ret > 0 ORDER BY m.name, a.sort_order';
     rows = await db.allAsync(sql, params);
-    res.render('admin/return-by-client', { rows, markets, articles, filters: f });
+    res.render('admin/return-by-client', { rows, markets, companies, articles, filters: f });
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -510,17 +520,17 @@ router.get('/bread-report/:group', async (req, res) => {
 
 router.post('/api/markets', async (req, res) => {
   try {
-    const { name, address, city, contact_name, contact_phone, client_code, object_code } = req.body;
+    const { name, address, city, contact_name, contact_phone, client_code, object_code, company_id } = req.body;
     if (!name) return res.json({ success: false, error: 'Назив е задолжителен' });
-    const r = await db.runAsync('INSERT INTO markets (name,address,city,contact_name,contact_phone,client_code,object_code) VALUES (?,?,?,?,?,?,?)', [name, address || null, city || null, contact_name || null, contact_phone || null, client_code || null, object_code || null]);
+    const r = await db.runAsync('INSERT INTO markets (name,address,city,contact_name,contact_phone,client_code,object_code,company_id) VALUES (?,?,?,?,?,?,?,?)', [name, address || null, city || null, contact_name || null, contact_phone || null, client_code || null, object_code || null, company_id || null]);
     res.json({ success: true, id: r.lastID });
   } catch (e) { res.json({ success: false, error: e.message }); }
 });
 
 router.put('/api/markets/:id', async (req, res) => {
   try {
-    const { name, address, city, contact_name, contact_phone, client_code, object_code } = req.body;
-    await db.runAsync('UPDATE markets SET name=?,address=?,city=?,contact_name=?,contact_phone=?,client_code=?,object_code=? WHERE id=?', [name, address || null, city || null, contact_name || null, contact_phone || null, client_code || null, object_code || null, req.params.id]);
+    const { name, address, city, contact_name, contact_phone, client_code, object_code, company_id } = req.body;
+    await db.runAsync('UPDATE markets SET name=?,address=?,city=?,contact_name=?,contact_phone=?,client_code=?,object_code=?,company_id=? WHERE id=?', [name, address || null, city || null, contact_name || null, contact_phone || null, client_code || null, object_code || null, company_id || null, req.params.id]);
     res.json({ success: true });
   } catch (e) { res.json({ success: false, error: e.message }); }
 });
@@ -658,6 +668,55 @@ router.post('/api/driver-markets', async (req, res) => {
 router.delete('/api/driver-markets/:id', async (req, res) => {
   try { await db.runAsync('DELETE FROM driver_markets WHERE id=?', [req.params.id]); res.json({ success: true }); }
   catch (e) { res.json({ success: false, error: e.message }); }
+});
+
+// ── API: COMPANIES ───────────────────────────────────────
+
+router.get('/api/companies', async (req, res) => {
+  try {
+    const rows = await db.allAsync('SELECT id,name FROM companies WHERE active=1 ORDER BY name');
+    res.json(rows);
+  } catch (e) { res.json({ error: e.message }); }
+});
+
+router.post('/api/companies', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.json({ success: false, error: 'Назив е задолжителен' });
+    const r = await db.runAsync('INSERT INTO companies (name) VALUES (?)', [name]);
+    res.json({ success: true, id: r.lastID });
+  } catch (e) { res.json({ success: false, error: e.message }); }
+});
+
+router.put('/api/companies/:id', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.json({ success: false, error: 'Назив е задолжителен' });
+    await db.runAsync('UPDATE companies SET name=? WHERE id=?', [name, req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.json({ success: false, error: e.message }); }
+});
+
+router.delete('/api/companies/:id', async (req, res) => {
+  try {
+    await db.runAsync('UPDATE companies SET active=0 WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.json({ success: false, error: e.message }); }
+});
+
+// ── PAGE: COMPANIES ───────────────────────────────────────
+
+router.get('/companies', async (req, res) => {
+  try {
+    const companies = await db.allAsync(`
+      SELECT c.id, c.name,
+             COUNT(m.id) market_count
+      FROM companies c
+      LEFT JOIN markets m ON m.company_id=c.id AND m.active=1
+      WHERE c.active=1
+      GROUP BY c.id ORDER BY c.name`);
+    res.render('admin/companies', { companies });
+  } catch (e) { res.status(500).send(e.message); }
 });
 
 module.exports = router;

@@ -3,10 +3,16 @@
 <form method="GET" action="/admin/return-by-client" class="filter-row no-print">
   <div class="field"><label>Од датум</label><input type="date" name="date_from" value="<%= filters.date_from %>"></div>
   <div class="field"><label>До датум</label><input type="date" name="date_to"   value="<%= filters.date_to %>"></div>
+  <div class="field"><label>🏢 Фирма (опционално)</label>
+    <select name="company_id" id="filter-company" onchange="filterMarkets()">
+      <option value="">— Сите фирми —</option>
+      <% companies.forEach(c => { %><option value="<%= c.id %>" <%= filters.company_id==c.id?'selected':'' %>><%= c.name %></option><% }) %>
+    </select>
+  </div>
   <div class="field"><label>Комитент (Пазар)</label>
-    <select name="market_id">
+    <select name="market_id" id="filter-market">
       <option value="">— Сите —</option>
-      <% markets.forEach(m => { %><option value="<%= m.id %>" <%= filters.market_id==m.id?'selected':'' %>><%= m.name %></option><% }) %>
+      <% markets.forEach(m => { %><option value="<%= m.id %>" data-company="<%= m.company_id||'' %>" <%= filters.market_id==m.id?'selected':'' %>><%= m.name %></option><% }) %>
     </select>
   </div>
   <div class="field"><label>Шифра на производ</label>
@@ -88,5 +94,26 @@
     <% } %>
   </div>
 </div>
+
+<script>
+(function() {
+  const companyVal = '<%= filters.company_id %>';
+  if (companyVal) filterMarkets();
+})();
+
+function filterMarkets() {
+  const companyId = document.getElementById('filter-company').value;
+  const marketSel = document.getElementById('filter-market');
+  Array.from(marketSel.options).forEach(opt => {
+    if (!opt.value) { opt.style.display = ''; return; }
+    const belongs = !companyId || opt.dataset.company == companyId;
+    opt.style.display = belongs ? '' : 'none';
+  });
+  const selectedOpt = marketSel.options[marketSel.selectedIndex];
+  if (selectedOpt && selectedOpt.style.display === 'none') {
+    marketSel.value = '';
+  }
+}
+</script>
 
 <%- include('_footer') %>

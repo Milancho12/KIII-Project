@@ -27,9 +27,15 @@ async function init() {
     role TEXT NOT NULL DEFAULT 'driver', phone TEXT, active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')))`);
 
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS companies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1)`);
+
   await db.runAsync(`CREATE TABLE IF NOT EXISTS markets (
     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-    address TEXT, contact_name TEXT, contact_phone TEXT, active INTEGER NOT NULL DEFAULT 1)`);
+    address TEXT, contact_name TEXT, contact_phone TEXT, active INTEGER NOT NULL DEFAULT 1,
+    company_id INTEGER REFERENCES companies(id))`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS articles (
     id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL,
@@ -65,6 +71,8 @@ async function init() {
   // Migration: add client_code and object_code to markets
   try { await db.runAsync('ALTER TABLE markets ADD COLUMN client_code TEXT'); } catch (e) { }
   try { await db.runAsync('ALTER TABLE markets ADD COLUMN object_code TEXT'); } catch (e) { }
+  // Migration: add company_id to markets
+  try { await db.runAsync('ALTER TABLE markets ADD COLUMN company_id INTEGER REFERENCES companies(id)'); } catch (e) { }
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS driver_markets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
