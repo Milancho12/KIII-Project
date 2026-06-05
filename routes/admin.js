@@ -126,70 +126,105 @@ router.get('/reports/word', async (req, res) => {
     const { date_from, date_to, market_id, company_id } = req.query;
     if (!date_from || !date_to) return res.status(400).send('Датумите се задолжителни');
 
-    let marketsToExport;
-    if (market_id) {
-      marketsToExport = await db.allAsync('SELECT * FROM markets WHERE id=?', [market_id]);
-    } else if (company_id) {
-      marketsToExport = await db.allAsync('SELECT * FROM markets WHERE active=1 AND company_id=? ORDER BY name', [company_id]);
-    } else {
-      marketsToExport = await db.allAsync('SELECT * FROM markets WHERE active=1 ORDER BY name');
-    }
-
     const children = [];
 
-    for (const market of marketsToExport) {
+    if (company_id && !market_id) {
+      const comp = await db.getAsync('SELECT * FROM companies WHERE id=?', [company_id]);
       const rows = await db.allAsync(`
-        SELECT a.code, a.name, a.price,
+        SELECT a.code, a.name, a.price, a.sort_order,
                COALESCE(SUM(di.delivered_qty),0) tot_del,
                COALESCE(SUM(di.returned_qty),0)  tot_ret,
                COALESCE(SUM(di.delivered_qty - di.returned_qty),0) net_qty
         FROM delivery_items di
         JOIN deliveries d ON d.id = di.delivery_id
         JOIN articles a ON a.id = di.article_id
-        WHERE d.market_id=? AND d.date>=? AND d.date<=?
+        JOIN markets m ON m.id = d.market_id
+        WHERE m.company_id=? AND d.date>=? AND d.date<=?
         GROUP BY a.id
         HAVING net_qty > 0
-        ORDER BY a.sort_order`, [market.id, date_from, date_to]);
+        ORDER BY a.sort_order`, [company_id, date_from, date_to]);
 
-      // Build heading: show client_code next to name if available
-      const marketHeading = market.client_code
-        ? `${market.client_code} – ${market.name}`
-        : market.name;
-
-      if (rows.length === 0) continue;
-
-      const totalPrice = rows.reduce((sum, r) => sum + (r.net_qty * r.price), 0);
-
-      // Market name heading (bold, larger) – includes client code if available
-      children.push(new Paragraph({
-        children: [new TextRun({ text: marketHeading, bold: true, size: 36, color: '1a1a2e' })],
-        spacing: { before: 480, after: 240 },
-      }));
-
-      // Separator line paragraph
-      children.push(new Paragraph({
-        children: [new TextRun({ text: '─'.repeat(40), color: '888888', size: 18 })],
-        spacing: { before: 0, after: 120 },
-      }));
-
-      // Product rows: code - net_qty
-      for (const r of rows) {
+      if (rows.length > 0) {
+        const totalPrice = rows.reduce((sum, r) => sum + (r.net_qty * r.price), 0);
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `ЗБИРНО ЗА ФИРМА: ${comp.name}`, bold: true, size: 36, color: '1a1a2e' })],
+          spacing: { before: 480, after: 240 },
+        }));
+        children.push(new Paragraph({
+          children: [new TextRun({ text: '─'.repeat(40), color: '888888', size: 18 })],
+          spacing: { before: 0, after: 120 },
+        }));
+        for (const r of rows) {
+          children.push(new Paragraph({
+            children: [
+              new TextRun({ text: `${r.code}`, bold: true, size: 24 }),
+              new TextRun({ text: ` - ${r.net_qty}`, size: 24 }),
+            ],
+            spacing: { after: 80 },
+          }));
+        }
         children.push(new Paragraph({
           children: [
-            new TextRun({ text: `${r.code}`, bold: true, size: 24 }),
-            new TextRun({ text: ` - ${r.net_qty}`, size: 24 }),
+            new TextRun({ text: `Вкупен износ: ${Math.round(totalPrice)} ден.`, bold: true, size: 28, color: '1d4ed8' }),
           ],
-          spacing: { after: 80 },
+          spacing: { before: 200, after: 480 },
         }));
       }
+    } else {
+      let marketsToExport;
+      if (market_id) {
+        marketsToExport = await db.allAsync('SELECT * FROM markets WHERE id=?', [market_id]);
+      } else {
+        marketsToExport = await db.allAsync('SELECT * FROM markets WHERE active=1 ORDER BY name');
+      }
 
-      // Total price line
-      children.push(new Paragraph({
-        children: [
-          new TextRun({ text: `Вкупен износ: ${Math.round(totalPrice)} ден.`, bold: true, size: 28, color: '1d4ed8' }),
-        ],
-        spacing: { before: 200, after: 480 },
-      }));
+      for (const market of marketsToExport) {
+        const rows = await db.allAsync(`
+          SELECT a.code, a.name, a.price, a.sort_order,
+                 COALESCE(SUM(di.delivered_qty),0) tot_del,
+                 COALESCE(SUM(di.returned_qty),0)  tot_ret,
+                 COALESCE(SUM(di.delivered_qty - di.returned_qty),0) net_qty
+          FROM delivery_items di
+          JOIN deliveries d ON d.id = di.delivery_id
+          JOIN articles a ON a.id = di.article_id
+          WHERE d.market_id=? AND d.date>=? AND d.date<=?
+          GROUP BY a.id
+          HAVING net_qty > 0
+          ORDER BY a.sort_order`, [market.id, date_from, date_to]);
+
+        const marketHeading = market.client_code ? `${market.client_code} – ${market.name}` : market.name;
+
+        if (rows.length === 0) continue;
+
+        const totalPrice = rows.reduce((sum, r) => sum + (r.net_qty * r.price), 0);
+
+        children.push(new Paragraph({
+          children: [new TextRun({ text: marketHeading, bold: true, size: 36, color: '1a1a2e' })],
+          spacing: { before: 480, after: 240 },
+        }));
+
+        children.push(new Paragraph({
+          children: [new TextRun({ text: '─'.repeat(40), color: '888888', size: 18 })],
+          spacing: { before: 0, after: 120 },
+        }));
+
+        for (const r of rows) {
+          children.push(new Paragraph({
+            children: [
+              new TextRun({ text: `${r.code}`, bold: true, size: 24 }),
+              new TextRun({ text: ` - ${r.net_qty}`, size: 24 }),
+            ],
+            spacing: { after: 80 },
+          }));
+        }
+
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: `Вкупен износ: ${Math.round(totalPrice)} ден.`, bold: true, size: 28, color: '1d4ed8' }),
+          ],
+          spacing: { before: 200, after: 480 },
+        }));
+      }
     }
 
     if (children.length === 0) {
@@ -249,23 +284,44 @@ router.get('/zito-report/excel', async (req, res) => {
     const { date_from, date_to, driver_id, market_id, company_id } = req.query;
     if (!date_from || !date_to) return res.status(400).send('Датумите се задолжителни');
 
-    let sql = `
-      SELECT m.id market_id, m.name market_name, m.city market_city, m.address market_address,
-             m.client_code, m.object_code,
-             a.code art_code, a.name art_name, a.price,
-             SUM(di.delivered_qty) delivered_qty,
-             SUM(di.returned_qty) returned_qty,
-             SUM(di.delivered_qty - di.returned_qty) net_qty
-      FROM delivery_items di
-      JOIN deliveries d ON d.id = di.delivery_id
-      JOIN articles a ON a.id = di.article_id
-      JOIN markets m ON m.id = d.market_id
-      WHERE d.date>=? AND d.date<=?`;
+    let sql = '';
     const params = [date_from, date_to];
-    if (driver_id) { sql += ' AND d.driver_id=?'; params.push(driver_id); }
-    if (market_id) { sql += ' AND d.market_id=?'; params.push(market_id); }
-    if (company_id) { sql += ' AND m.company_id=?'; params.push(company_id); }
-    sql += ' GROUP BY m.id, a.id HAVING net_qty > 0 ORDER BY m.name, a.sort_order';
+    
+    if (company_id && !market_id) {
+       sql = `
+         SELECT c.id as market_id, c.name as market_name, '' as market_city, '' as market_address,
+                '' as client_code, '' as object_code,
+                a.code art_code, a.name art_name, a.price,
+                SUM(di.delivered_qty) delivered_qty,
+                SUM(di.returned_qty) returned_qty,
+                SUM(di.delivered_qty - di.returned_qty) net_qty
+         FROM delivery_items di
+         JOIN deliveries d ON d.id = di.delivery_id
+         JOIN articles a ON a.id = di.article_id
+         JOIN markets m ON m.id = d.market_id
+         JOIN companies c ON c.id = m.company_id
+         WHERE d.date>=? AND d.date<=? AND m.company_id=?
+       `;
+       params.push(company_id);
+       if (driver_id) { sql += ' AND d.driver_id=?'; params.push(driver_id); }
+       sql += ' GROUP BY c.id, a.id HAVING net_qty > 0 ORDER BY c.name, a.sort_order';
+    } else {
+       sql = `
+         SELECT m.id market_id, m.name market_name, m.city market_city, m.address market_address,
+                m.client_code, m.object_code,
+                a.code art_code, a.name art_name, a.price,
+                SUM(di.delivered_qty) delivered_qty,
+                SUM(di.returned_qty) returned_qty,
+                SUM(di.delivered_qty - di.returned_qty) net_qty
+         FROM delivery_items di
+         JOIN deliveries d ON d.id = di.delivery_id
+         JOIN articles a ON a.id = di.article_id
+         JOIN markets m ON m.id = d.market_id
+         WHERE d.date>=? AND d.date<=?`;
+       if (driver_id) { sql += ' AND d.driver_id=?'; params.push(driver_id); }
+       if (market_id) { sql += ' AND d.market_id=?'; params.push(market_id); }
+       sql += ' GROUP BY m.id, a.id HAVING net_qty > 0 ORDER BY m.name, a.sort_order';
+    }
 
     const rows = await db.allAsync(sql, params);
     const dateStr = date_from === date_to ? date_from : `${date_from} do ${date_to}`;
@@ -346,6 +402,8 @@ router.get('/zito-report/excel', async (req, res) => {
       cell.style = hStyle(colBgs[i], colFgs[i]);
     });
 
+    let gDel = 0, gRet = 0, gNet = 0, gDelIznos = 0, gRetIznos = 0, gNetIznos = 0;
+
     // ── DATA ROWS ─────────────────────────────────────────
     const dataStyle = {
       font: { size: 10 },
@@ -363,6 +421,17 @@ router.get('/zito-report/excel', async (req, res) => {
         rowIdx = 0;
       }
       currentMarketId = r.market_id;
+
+      const delIznos = r.delivered_qty * r.price;
+      const retIznos = r.returned_qty * r.price;
+      const netIznos = r.net_qty * r.price;
+
+      gDel += r.delivered_qty;
+      gRet += r.returned_qty;
+      gNet += r.net_qty;
+      gDelIznos += delIznos;
+      gRetIznos += retIznos;
+      gNetIznos += netIznos;
 
       const row = ws.addRow([
         DISTRIBUTER_CODE,
@@ -391,6 +460,24 @@ router.get('/zito-report/excel', async (req, res) => {
       });
       rowIdx++;
     });
+
+    if (rows.length > 0) {
+      ws.addRow([]);
+      
+      const grandTotalRow = ws.addRow([
+        '', '', '', '', '', '', '', '', 'ВКУПНО:',
+        gDel, gRet, gNet,
+        parseFloat(gDelIznos.toFixed(2)), parseFloat(gRetIznos.toFixed(2)), parseFloat(gNetIznos.toFixed(2))
+      ]);
+      grandTotalRow.height = 20;
+      grandTotalRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+         if (colNum >= 9) {
+           cell.style = colNum >= 10 ? numStyle : dataStyle;
+           cell.font = { bold: true, size: 11 };
+           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE066' } };
+         }
+      });
+    }
 
     if (rows.length === 0) {
       ws.addRow(['Нема податоци за избраниот период']);
