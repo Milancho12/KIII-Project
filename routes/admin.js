@@ -141,7 +141,7 @@ router.get('/reports/word', async (req, res) => {
         JOIN markets m ON m.id = d.market_id
         WHERE m.company_id=? AND d.date>=? AND d.date<=?
         GROUP BY a.id
-        HAVING net_qty > 0
+        HAVING SUM(di.delivered_qty - di.returned_qty) > 0
         ORDER BY a.sort_order`, [company_id, date_from, date_to]);
 
       if (rows.length > 0) {
@@ -189,7 +189,7 @@ router.get('/reports/word', async (req, res) => {
           JOIN articles a ON a.id = di.article_id
           WHERE d.market_id=? AND d.date>=? AND d.date<=?
           GROUP BY a.id
-          HAVING net_qty > 0
+          HAVING SUM(di.delivered_qty - di.returned_qty) > 0
           ORDER BY a.sort_order`, [market.id, date_from, date_to]);
 
         const marketHeading = market.client_code ? `${market.client_code} – ${market.name}` : market.name;
@@ -261,7 +261,7 @@ router.get('/invoices', async (req, res) => {
              SUM(di.delivered_qty - di.returned_qty) net_qty
       FROM delivery_items di JOIN deliveries d ON d.id=di.delivery_id JOIN articles a ON a.id=di.article_id
       WHERE d.market_id=? AND d.date>=? AND d.date<=?
-      GROUP BY a.id HAVING net_qty>0 ORDER BY a.sort_order`, [f.market_id, f.date_from, f.date_to]);
+      GROUP BY a.id HAVING SUM(di.delivered_qty - di.returned_qty)>0 ORDER BY a.sort_order`, [f.market_id, f.date_from, f.date_to]);
     invoiceData = rows.map(r => ({ ...r, total: r.net_qty * r.price }));
   }
   res.render('admin/invoices', { markets, invoiceData, selMarket, filters: f });
@@ -304,7 +304,7 @@ router.get('/zito-report/excel', async (req, res) => {
        `;
        params.push(company_id);
        if (driver_id) { sql += ' AND d.driver_id=?'; params.push(driver_id); }
-       sql += ' GROUP BY c.id, a.id HAVING net_qty > 0 ORDER BY c.name, a.sort_order';
+       sql += ' GROUP BY c.id, a.id HAVING SUM(di.delivered_qty - di.returned_qty) > 0 ORDER BY c.name, a.sort_order';
     } else {
        sql = `
          SELECT m.id market_id, m.name market_name, m.city market_city, m.address market_address,
@@ -320,7 +320,7 @@ router.get('/zito-report/excel', async (req, res) => {
          WHERE d.date>=? AND d.date<=?`;
        if (driver_id) { sql += ' AND d.driver_id=?'; params.push(driver_id); }
        if (market_id) { sql += ' AND d.market_id=?'; params.push(market_id); }
-       sql += ' GROUP BY m.id, a.id HAVING net_qty > 0 ORDER BY m.name, a.sort_order';
+       sql += ' GROUP BY m.id, a.id HAVING SUM(di.delivered_qty - di.returned_qty) > 0 ORDER BY m.name, a.sort_order';
     }
 
     const rows = await db.allAsync(sql, params);
@@ -520,7 +520,7 @@ router.get('/return-by-client', async (req, res) => {
     if (f.company_id) { sql += ' AND m.company_id=?'; params.push(f.company_id); }
     if (f.market_id) { sql += ' AND d.market_id=?'; params.push(f.market_id); }
     if (f.article_code) { sql += ' AND a.code=?'; params.push(f.article_code); }
-    sql += ' GROUP BY m.id, a.id HAVING tot_ret > 0 ORDER BY m.name, a.sort_order';
+    sql += ' GROUP BY m.id, a.id HAVING SUM(di.returned_qty) > 0 ORDER BY m.name, a.sort_order';
     rows = await db.allAsync(sql, params);
     res.render('admin/return-by-client', { rows, markets, companies, articles, filters: f });
   } catch (e) { res.status(500).send(e.message); }
@@ -597,7 +597,7 @@ router.get('/bread-report/:group', async (req, res) => {
         AND a.code IN (${placeholders})`;
     const params = [f.date_from, f.date_to, ...group.codes];
     if (f.market_id) { sql += ' AND d.market_id=?'; params.push(f.market_id); }
-    sql += ' GROUP BY m.id, a.id HAVING net_qty > 0 ORDER BY m.name, a.sort_order';
+    sql += ' GROUP BY m.id, a.id HAVING SUM(di.delivered_qty - di.returned_qty) > 0 ORDER BY m.name, a.sort_order';
     const rows = await db.allAsync(sql, params);
     res.render('admin/bread-report', { rows, markets, filters: f, group, groupKey: req.params.group });
   } catch (e) { res.status(500).send(e.message); }
