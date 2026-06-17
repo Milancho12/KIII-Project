@@ -1,5 +1,9 @@
-const { Pool } = require('pg');
+const pg = require('pg');
+const { Pool } = pg;
 const bcrypt = require('bcryptjs');
+
+// Parse Postgres int8 (BIGINT) as integer to prevent SUM() string concatenation in JS
+pg.types.setTypeParser(20, parseInt);
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
