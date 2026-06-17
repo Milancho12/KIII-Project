@@ -1,0 +1,9 @@
+node_modules
+.env
+npm-debug.log
+zitoLuks.db
+zitoLuks.db-journal
+zitoLuks.db-wal
+zitoLuks.db-shm
+.git
+.github

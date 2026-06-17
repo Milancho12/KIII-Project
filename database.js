@@ -1,97 +1,98 @@
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
-const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'zitoLuks.db');
-const db = new sqlite3.Database(DB_PATH);
-
-// Enable WAL mode and foreign keys
-db.serialize(() => {
-  db.run('PRAGMA journal_mode = WAL');
-  db.run('PRAGMA foreign_keys = ON');
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'postgres',
+  database: process.env.DB_NAME || 'zitoluks'
 });
 
-// Promisify helpers
-db.runAsync = (sql, params = []) => new Promise((resolve, reject) => db.run(sql, params, function (err) { if (err) reject(err); else resolve(this); }));
-db.getAsync = (sql, params = []) => new Promise((resolve, reject) => db.get(sql, params, (err, row) => err ? reject(err) : resolve(row)));
-db.allAsync = (sql, params = []) => new Promise((resolve, reject) => db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows)));
+// Helper to convert SQLite `?` parameters to Postgres `$1, $2`
+function convertQuery(sql) {
+  let i = 1;
+  return sql.replace(/\?/g, () => `$${i++}`);
+}
 
-// Sync-like wrappers — used in routes via the initialized db
-db.prepare = undefined; // remove better-sqlite3 API hint
+const db = {
+  runAsync: async (sql, params = []) => {
+    let pgSql = convertQuery(sql);
+    let isInsert = pgSql.trim().toUpperCase().startsWith('INSERT');
+    if (isInsert && !pgSql.toUpperCase().includes('RETURNING ID')) {
+        pgSql += ' RETURNING id';
+    }
+    const res = await pool.query(pgSql, params);
+    if (isInsert && res.rows && res.rows.length > 0) {
+        return { lastID: res.rows[0].id };
+    }
+    return res;
+  },
+  getAsync: async (sql, params = []) => {
+    const res = await pool.query(convertQuery(sql), params);
+    return res.rows[0];
+  },
+  allAsync: async (sql, params = []) => {
+    const res = await pool.query(convertQuery(sql), params);
+    return res.rows;
+  }
+};
 
 // Initialize schema and seed
 async function init() {
   await db.runAsync(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+    id SERIAL PRIMARY KEY, name TEXT NOT NULL,
     username TEXT NOT NULL UNIQUE, password TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'driver', phone TEXT, active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now')))`);
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS companies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1)`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS markets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+    id SERIAL PRIMARY KEY, name TEXT NOT NULL,
     address TEXT, contact_name TEXT, contact_phone TEXT, active INTEGER NOT NULL DEFAULT 1,
-    company_id INTEGER REFERENCES companies(id))`);
+    company_id INTEGER REFERENCES companies(id),
+    city TEXT, client_code TEXT, object_code TEXT)`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS articles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL,
+    id SERIAL PRIMARY KEY, code TEXT NOT NULL,
     name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'kom',
     price REAL NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1)`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL,
-    market_id INTEGER NOT NULL, date TEXT NOT NULL,
-    FOREIGN KEY (driver_id) REFERENCES users(id),
-    FOREIGN KEY (market_id) REFERENCES markets(id),
+    id SERIAL PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES users(id),
+    market_id INTEGER NOT NULL REFERENCES markets(id), date TEXT NOT NULL,
     UNIQUE(driver_id, market_id, date))`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS deliveries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL,
-    market_id INTEGER NOT NULL, date TEXT NOT NULL,
+    id SERIAL PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES users(id),
+    market_id INTEGER NOT NULL REFERENCES markets(id), date TEXT NOT NULL,
     submitted_at TEXT, edited_at TEXT, notes TEXT, locked INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (driver_id) REFERENCES users(id),
-    FOREIGN KEY (market_id) REFERENCES markets(id),
     UNIQUE(driver_id, market_id, date))`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS delivery_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, delivery_id INTEGER NOT NULL,
+    id SERIAL PRIMARY KEY, delivery_id INTEGER NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
     article_id INTEGER NOT NULL, delivered_qty INTEGER NOT NULL DEFAULT 0,
     returned_qty INTEGER NOT NULL DEFAULT 0, next_day_qty INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (delivery_id) REFERENCES deliveries(id) ON DELETE CASCADE,
     UNIQUE(delivery_id, article_id))`);
 
-  // Migration: add next_day_qty if it doesn't exist
-  try { await db.runAsync('ALTER TABLE delivery_items ADD COLUMN next_day_qty INTEGER NOT NULL DEFAULT 0'); } catch (e) { }
-  // Migration: add city field to markets
-  try { await db.runAsync('ALTER TABLE markets ADD COLUMN city TEXT'); } catch (e) { }
-  // Migration: add client_code and object_code to markets
-  try { await db.runAsync('ALTER TABLE markets ADD COLUMN client_code TEXT'); } catch (e) { }
-  try { await db.runAsync('ALTER TABLE markets ADD COLUMN object_code TEXT'); } catch (e) { }
-  // Migration: add company_id to markets
-  try { await db.runAsync('ALTER TABLE markets ADD COLUMN company_id INTEGER REFERENCES companies(id)'); } catch (e) { }
-
   await db.runAsync(`CREATE TABLE IF NOT EXISTS driver_markets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    driver_id INTEGER NOT NULL,
-    market_id INTEGER NOT NULL,
-    FOREIGN KEY (driver_id) REFERENCES users(id),
-    FOREIGN KEY (market_id) REFERENCES markets(id),
+    id SERIAL PRIMARY KEY,
+    driver_id INTEGER NOT NULL REFERENCES users(id),
+    market_id INTEGER NOT NULL REFERENCES markets(id),
     UNIQUE(driver_id, market_id))`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS loading_lists (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL,
+    id SERIAL PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES users(id),
     date TEXT NOT NULL, submitted_at TEXT, notes TEXT,
-    FOREIGN KEY (driver_id) REFERENCES users(id),
     UNIQUE(driver_id, date))`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS loading_list_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, loading_list_id INTEGER NOT NULL,
+    id SERIAL PRIMARY KEY, loading_list_id INTEGER NOT NULL REFERENCES loading_lists(id) ON DELETE CASCADE,
     article_id INTEGER NOT NULL, loaded_qty INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (loading_list_id) REFERENCES loading_lists(id) ON DELETE CASCADE,
     UNIQUE(loading_list_id, article_id))`);
 
   // Seed admin
@@ -103,7 +104,8 @@ async function init() {
   }
 
   // Seed articles
-  const cnt = (await db.getAsync('SELECT COUNT(*) c FROM articles')).c;
+  const cntRes = await db.getAsync('SELECT COUNT(*) as c FROM articles');
+  const cnt = parseInt(cntRes.c, 10);
   if (cnt === 0) {
     const arts = [
       ['814', 'Bel Rolovan leb', 30, 0], ['94', 'Bel leb na parcinja', 33, 1],
@@ -124,7 +126,7 @@ async function init() {
     }
     console.log(`✅ ${arts.length} артикли додадени`);
   }
-  console.log('✅ База на податоци подготвена');
+  console.log('✅ База на податоци подготвена (PostgreSQL)');
 }
 
-module.exports = { db, init };
+module.exports = { db, init, pool };

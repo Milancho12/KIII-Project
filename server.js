@@ -12,8 +12,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
+const { createClient } = require('redis');
+const RedisStore = require('connect-redis').default;
+
+const redisClient = createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379'
+});
+redisClient.connect().catch(console.error);
+
 app.use(session({
-  secret: 'zitoLuks-secret-2024',
+  store: new RedisStore({ client: redisClient }),
+  secret: process.env.SESSION_SECRET || 'zitoLuks-secret-2024',
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 12 * 60 * 60 * 1000 }
