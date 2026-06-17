@@ -26,7 +26,7 @@ router.get('/', async (req, res) => {
              COALESCE(SUM(di.delivered_qty),0) tot_del, COALESCE(SUM(di.returned_qty),0) tot_ret
       FROM deliveries d JOIN users u ON u.id=d.driver_id JOIN markets m ON m.id=d.market_id
       LEFT JOIN delivery_items di ON di.delivery_id=d.id WHERE d.date=?
-      GROUP BY d.id ORDER BY d.submitted_at DESC`, [date]);
+      GROUP BY d.id, u.name, m.name ORDER BY d.submitted_at DESC`, [date]);
     res.render('admin/dashboard', { stats, recent, date });
   } catch (e) { res.status(500).send(e.message); }
 });
@@ -114,7 +114,7 @@ router.get('/reports', async (req, res) => {
   if (f.driver_id) { q += ' AND d.driver_id=?'; params.push(f.driver_id); }
   if (f.market_id) { q += ' AND d.market_id=?'; params.push(f.market_id); }
   if (f.company_id) { q += ' AND m.company_id=?'; params.push(f.company_id); }
-  q += ' GROUP BY d.id ORDER BY d.date DESC, d.submitted_at DESC LIMIT 500';
+  q += ' GROUP BY d.id, u.name, m.name ORDER BY d.date DESC, d.submitted_at DESC LIMIT 500';
   const deliveries = await db.allAsync(q, params);
   res.render('admin/reports', { deliveries, drivers, markets, companies, filters: f });
 });
